@@ -41,7 +41,7 @@ export class BillingClient {
 
 class GitRepo:
     def __init__(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.path = Path(self.tmp.name)
         self.old_cwd = os.getcwd()
         os.chdir(self.path)
@@ -49,6 +49,9 @@ class GitRepo:
         self.git("config", "user.email", "t@t")
         self.git("config", "user.name", "t")
         self.git("config", "core.autocrlf", "false")
+        # No background gc/maintenance, which can race the temp-dir cleanup.
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
 
     def git(self, *args):
         subprocess.run(["git", *args], check=True, capture_output=True)

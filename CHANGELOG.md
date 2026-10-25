@@ -11,3 +11,4 @@
   first instead of `git bisect run`, which behaved differently on the runner's git.
 - editlint: new `edit_comments` scope key lets a change rewrite comments outside
   symbols in the listed files (for example a stale file header).
+- Unit tests tolerate temp-dir cleanup races (background git gc on the runner).
