@@ -14,6 +14,6 @@ paths: []
 # Files whose comments outside symbols may be rewritten (e.g. a stale header).
 edit_comments: [scripts/ai/self-heal.sh, .github/workflows/agent-pr-loop.yml]
 # Files you may delete (owner approval is still required by AGENTS.md).
-delete_files: []
+delete_files: [.github/workflows/ai-guardrails.yml]
 max_changed_lines: 300
 max_files: 15

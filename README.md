@@ -56,7 +56,7 @@ CodeQL is free on public repos. Private repos need GitHub Advanced Security
 | `.ai/change-scope.yml`, `.ai/config.yml` | The PR's declared scope and budget, and the module budget. |
 | `scripts/ai/` | Every check (bash and stdlib Python, no dependencies). `run-all-checks.sh` runs them all. |
 | `.githooks/pre-commit` | Blocks agent commits anywhere but `staging`, and commits that mix tests with code on `staging`. |
-| `.github/workflows/` | `ai-guardrails`, `codeql`, `dual-model-review`, `agent-pr-loop`, `reset-staging`, `bootstrap`, `sentinel`. |
+| `.github/workflows/` | `guardrails` (AI Guardrails), `codeql`, `dual-model-review`, `agent-pr-loop`, `reset-staging`, `bootstrap`, `sentinel`. |
 | `.ai/oracles/` | Owner-written expected outputs (`scripts/ai/oracle.py`); read-only like tests. |
 | `examples/` | A TS helper and test: an empty DB result returns a fixed honest message, not invented IDs. |
 
