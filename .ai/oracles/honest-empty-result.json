@@ -1,0 +1,6 @@
+{
+  "name": "findUsersByOrg returns the fixed message for an empty org",
+  "cmd": "node --input-type=module -e \"import {findUsersByOrg} from './examples/honest-empty-result/src/find-users.ts'; console.log(JSON.stringify(await findUsersByOrg({listUsersByOrg: async () => []}, 'org_1')))\"",
+  "expect_exit": 0,
+  "expect_stdout": "{\"found\":false,\"users\":[],\"message\":\"No users found for this organization.\"}\n"
+}

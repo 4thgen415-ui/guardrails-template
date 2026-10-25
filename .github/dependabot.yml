@@ -1,0 +1,17 @@
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    # Topology: only main and staging. Dependency PRs target staging and reach
+    # main through the normal staging -> main PR.
+    target-branch: staging
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+  # Uncomment once the project has a package.json:
+  # - package-ecosystem: npm
+  #   directory: /
+  #   target-branch: staging
+  #   schedule:
+  #     interval: weekly

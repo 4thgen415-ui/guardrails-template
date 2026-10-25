@@ -1,0 +1,59 @@
+name: Bootstrap
+
+# Runs in repositories generated from the template (never in the template
+# itself). Idempotent: creates staging, sets repo settings, protects main
+# (PR + required checks incl. source-is-staging, no reviews, no force pushes),
+# protects staging from deletion and adds the branch-creation ruleset.
+# Needs GUARDRAILS_ADMIN_TOKEN: a fine-grained PAT with Administration,
+# Contents, Pull requests, Issues and Workflows read/write on this repo
+# (one-time owner setup). Without it this workflow FAILS on purpose.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bootstrap
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    name: bootstrap
+    if: github.repository != format('{0}/guardrails-template', github.repository_owner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require GUARDRAILS_ADMIN_TOKEN
+        env:
+          HAS_TOKEN: ${{ secrets.GUARDRAILS_ADMIN_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then
+            {
+              echo "## Bootstrap FAILED: GUARDRAILS_ADMIN_TOKEN is missing"
+              echo
+              echo "This repo is NOT protected yet: no staging branch, no main protection, no rulesets."
+              echo "One-time setup: create a fine-grained PAT (Administration, Contents, Pull requests, Issues, Workflows: read/write),"
+              echo "add it as the repository secret GUARDRAILS_ADMIN_TOKEN, then re-run this workflow."
+            } | tee -a "$GITHUB_STEP_SUMMARY"
+            echo "::error::GUARDRAILS_ADMIN_TOKEN is missing. Repo is unprotected until it is added and Bootstrap is re-run."
+            exit 1
+          fi
+      - name: Apply topology and protection (idempotent)
+        env:
+          GH_TOKEN: ${{ secrets.GUARDRAILS_ADMIN_TOKEN }}
+        run: python3 scripts/ai/sentinel.py --repo "$GITHUB_REPOSITORY" --enforce | tee -a "$GITHUB_STEP_SUMMARY"
+      - name: Read back
+        env:
+          GH_TOKEN: ${{ secrets.GUARDRAILS_ADMIN_TOKEN }}
+        run: |
+          {
+            echo '```text'
+            echo "branches: $(gh api "repos/$GITHUB_REPOSITORY/branches" --jq '[.[].name] | join(", ")')"
+            gh api "repos/$GITHUB_REPOSITORY/branches/main/protection" --jq '{checks: .required_status_checks.contexts, reviews: .required_pull_request_reviews.required_approving_review_count, force_pushes: .allow_force_pushes.enabled, deletions: .allow_deletions.enabled}' || echo "main protection: unavailable"
+            gh api "repos/$GITHUB_REPOSITORY/rulesets" --jq '.[].name' || echo "rulesets: unavailable"
+            python3 scripts/ai/module_lint.py || true
+            echo '```'
+          } | tee -a "$GITHUB_STEP_SUMMARY"

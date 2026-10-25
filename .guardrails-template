@@ -1,0 +1,3 @@
+This file marks the guardrails-template repo itself.
+Delete it in repos created from the template, after filling every FILL slot in AGENTS.md.
+While it exists, scripts/ai/check-agents-md.sh allows unfilled FILL slots.

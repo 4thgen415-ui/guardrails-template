@@ -1,0 +1,11 @@
+# Keep line endings stable across platforms and AI edits.
+* text=auto eol=lf
+*.sh text eol=lf
+.githooks/* text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
+*.woff2 binary

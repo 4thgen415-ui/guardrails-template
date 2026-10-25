@@ -1,0 +1,241 @@
+name: AI Guardrails
+
+# Topology: exactly two branches. Agents push to staging; staging -> main PRs
+# merge only when every required check here is green. Push-to-staging runs
+# produce the same check names on the same commit, so a PR opened by a bot
+# token (which starts no pull_request workflows) still gets its checks.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [main, staging]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ai-guardrails-${{ github.event_name }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Diff base: the PR base, or main when this is a push to staging.
+  PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+
+jobs:
+  guardrails:
+    name: guardrails
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: AGENTS.md structure
+        run: scripts/ai/check-agents-md.sh
+      - name: Review rules
+        run: scripts/ai/review-rules.sh
+      - name: Shell test suites (hook, review rules, PR loop, self-heal)
+        run: |
+          git config --global user.email ci@example.invalid
+          git config --global user.name ci
+          scripts/ai/test-review-rules.sh
+          scripts/ai/test-pre-edit-guard.sh
+          scripts/ai/test-pr-loop.sh
+          scripts/ai/test-self-heal.sh
+      - name: Python unit tests
+        run: |
+          python3 -m unittest discover -s scripts/ai -p 'test_*.py' -v
+          python3 -m unittest discover -s scripts/ai/backstops -p 'test_*.py' -v
+      - name: Calibration (seeded bad changes in a temp dir must be caught)
+        run: scripts/ai/calibrate.sh
+      - name: shellcheck
+        run: shellcheck -x scripts/ai/*.sh .githooks/pre-commit
+      - name: actionlint
+        run: |
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color
+
+  source-is-staging:
+    name: source-is-staging
+    runs-on: ubuntu-latest
+    steps:
+      - name: PRs into main must come from staging in this repo
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          if [ "$EVENT" != "pull_request" ] || [ "$BASE_REF" != "main" ]; then
+            echo "Not a PR into main; nothing to check."
+            exit 0
+          fi
+          if [ "$HEAD_REF" != "staging" ] || [ "$HEAD_REPO" != "$REPO" ]; then
+            echo "::error::PRs into main must come from $REPO:staging (got $HEAD_REPO:$HEAD_REF). Agents work only on staging."
+            exit 1
+          fi
+          echo "Source is $REPO:staging."
+
+  branch-policy:
+    name: branch-policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Only main and staging exist
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          patterns="$(python3 -c "import sys; sys.path.insert(0,'scripts/ai'); from ai_config import parse_simple_yaml; print(' '.join(parse_simple_yaml(open('.ai/config.yml').read()).get('allowed_branch_patterns', [])))")"
+          branches="$(gh api "repos/$GH_REPO/branches" --paginate --jq '.[].name')"
+          echo "Branches:"; echo "$branches"
+          bad=0
+          grep -qx staging <<<"$branches" || { echo "::error::staging branch is missing. Run the Bootstrap workflow (needs GUARDRAILS_ADMIN_TOKEN)."; bad=1; }
+          while read -r b; do
+            [ -z "$b" ] && continue
+            case "$b" in main|staging) continue ;; esac
+            ok=0
+            for p in $patterns; do
+              # shellcheck disable=SC2254
+              case "$b" in $p) ok=1 ;; esac
+            done
+            if [ "$ok" = 0 ]; then echo "::error::Stray branch '$b'. Only main and staging may exist; sentinel archives it as a tag and deletes it."; bad=1; fi
+          done <<<"$branches"
+          exit "$bad"
+
+  autonomy:
+    name: autonomy
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      issues: read
+    outputs:
+      level: ${{ steps.level.outputs.level }}
+      budget_multiplier: ${{ steps.level.outputs.budget_multiplier }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Progressive autonomy level from the activity log
+        id: level
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 scripts/ai/autonomy.py --repo "$GITHUB_REPOSITORY" | tee -a "$GITHUB_OUTPUT"
+
+  tests-untouched:
+    name: tests-untouched
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Tests not changed together with code (no bypass)
+        run: |
+          base="${PR_BASE_SHA:-$(git merge-base origin/main HEAD)}"
+          scripts/ai/check-tests-untouched.sh "$base" HEAD
+
+  editlint:
+    name: editlint
+    needs: autonomy
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Blast-radius lint
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          AI_BUDGET_MULTIPLIER: ${{ needs.autonomy.outputs.budget_multiplier }}
+        run: |
+          base="${PR_BASE_SHA:-$(git merge-base origin/main HEAD)}"
+          python3 scripts/ai/editlint.py --base "$base"
+
+  module-lint:
+    name: module-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Module budget and deep imports
+        run: |
+          if [ -n "$PR_BASE_SHA" ]; then
+            python3 scripts/ai/module_lint.py --base "$PR_BASE_SHA"
+          elif [ "$GITHUB_REF" = "refs/heads/staging" ]; then
+            python3 scripts/ai/module_lint.py --base "$(git merge-base origin/main HEAD)"
+          else
+            python3 scripts/ai/module_lint.py
+          fi
+
+  backstops:
+    name: backstops
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Fabricated URLs, placeholder IDs, unproven claims
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          base="${PR_BASE_SHA:-$(git merge-base origin/main HEAD)}"
+          python3 scripts/ai/backstops/backstops.py diff --base "$base" --check-urls
+
+  packages:
+    name: packages
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: New dependencies exist on the registry and are not brand new
+        run: |
+          base="${PR_BASE_SHA:-$(git merge-base origin/main HEAD)}"
+          python3 scripts/ai/package_check.py --base "$base"
+
+  app-checks:
+    name: app-checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Detect package.json
+        id: detect
+        run: |
+          if [ -f package.json ]; then
+            echo "has_pkg=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_pkg=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::No package.json: skipping lint/typecheck/test/build (template or non-Node repo). Add package.json scripts to enable them."
+          fi
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Example tests (examples/)
+        run: |
+          if [ -d examples ]; then
+            node --test 'examples/**/*.test.ts'
+          else
+            echo "::notice::No examples/ directory: skipping example tests."
+          fi
+      - name: Oracles (.ai/oracles, owner-written expected outputs)
+        run: python3 scripts/ai/oracle.py
+      # Cloudflare/TypeScript default. Swap npm for pnpm/yarn here and in AGENTS.md if needed.
+      - name: Install
+        if: steps.detect.outputs.has_pkg == 'true'
+        run: |
+          if [ -f package-lock.json ]; then npm ci; else npm install --no-audit --no-fund; fi
+      - name: Lint
+        if: steps.detect.outputs.has_pkg == 'true'
+        run: npm run lint
+      - name: Typecheck
+        if: steps.detect.outputs.has_pkg == 'true'
+        run: npm run typecheck
+      - name: Test
+        if: steps.detect.outputs.has_pkg == 'true'
+        run: npm test
+      - name: Build
+        if: steps.detect.outputs.has_pkg == 'true'
+        run: npm run build

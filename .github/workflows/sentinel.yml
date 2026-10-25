@@ -1,0 +1,66 @@
+name: Sentinel
+
+# Hourly sweep of every repository the owner owns (including ones created
+# outside the template): staging exists, stray branches are archived as tags
+# and then deleted, settings and protection match the template. Runs only in
+# the guardrails-template repo. Scheduled runs are a dry run until the repo
+# variable SENTINEL_ENFORCE is "true". Needs GUARDRAILS_ADMIN_TOKEN with
+# access to all repositories (one-time owner setup); fails loudly without it.
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Dry run (read-only plan)"
+        type: boolean
+        default: true
+      exclude:
+        description: "Comma-separated repo names to skip"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sentinel
+  cancel-in-progress: false
+
+jobs:
+  sentinel:
+    name: sentinel
+    if: github.repository == format('{0}/guardrails-template', github.repository_owner)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Require GUARDRAILS_ADMIN_TOKEN
+        env:
+          HAS_TOKEN: ${{ secrets.GUARDRAILS_ADMIN_TOKEN != '' }}
+        run: |
+          if [ "$HAS_TOKEN" != "true" ]; then
+            echo "::error::GUARDRAILS_ADMIN_TOKEN is missing: sentinel cannot see or fix the owner's repositories."
+            echo "## Sentinel FAILED: GUARDRAILS_ADMIN_TOKEN is missing" >> "$GITHUB_STEP_SUMMARY"
+            exit 1
+          fi
+      - name: Sweep
+        env:
+          GH_TOKEN: ${{ secrets.GUARDRAILS_ADMIN_TOKEN }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || vars.SENTINEL_ENFORCE != 'true' }}
+          EXCLUDE: ${{ inputs.exclude || vars.SENTINEL_EXCLUDE }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          args=(--owner "$OWNER" --exclude "$EXCLUDE" --json sentinel.json)
+          if [ "$DRY_RUN" != "true" ]; then args+=(--enforce); fi
+          set +e
+          python3 scripts/ai/sentinel.py "${args[@]}" > sentinel.txt 2>&1
+          status=$?
+          cat sentinel.txt
+          { echo '```text'; cat sentinel.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+          exit "$status"
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: sentinel-report
+          path: sentinel.json
+          if-no-files-found: ignore

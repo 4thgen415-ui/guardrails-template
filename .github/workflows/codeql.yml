@@ -1,0 +1,38 @@
+name: CodeQL
+
+on:
+  pull_request:
+  push:
+    branches: [main, staging]
+  schedule:
+    - cron: "23 4 * * 1" # weekly, Monday 04:23 UTC
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    strategy:
+      fail-fast: false
+      matrix:
+        # Default for TypeScript/Cloudflare Workers projects. Other CodeQL
+        # languages: python, go, java-kotlin, csharp, c-cpp, ruby, swift, rust, actions.
+        language: [javascript-typescript]
+    steps:
+      - uses: actions/checkout@v7
+      # github/codeql-action v4 is used because v3 is scheduled for deprecation
+      # in December 2026; init/autobuild/analyze are otherwise identical.
+      - uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          queries: security-and-quality
+      - uses: github/codeql-action/autobuild@v4
+      - uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:${{ matrix.language }}

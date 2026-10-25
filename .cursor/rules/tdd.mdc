@@ -1,0 +1,14 @@
+---
+description: Test files are read-only during implementation.
+globs:
+alwaysApply: true
+---
+
+# Tests are read-only
+
+- During implementation, never create, edit, rename, or delete test files
+  (`*.test.ts`, `*.spec.ts`, `test/`, `tests/`, `__tests__/`, `test_*.py`).
+- Make failing tests pass by changing the smallest amount of non-test code.
+- If a test looks wrong, stop and report it. Do not change it.
+- Refactor only while all tests are green, and re-run them after.
+- CI fails any PR that changes test files together with other files.

@@ -1,0 +1,17 @@
+# Blast radius of the current agent branch, enforced by scripts/ai/editlint.py.
+# Only used when this file is changed in the PR (stale scopes from earlier PRs
+# are ignored). A ```change-scope block in the PR body overrides it.
+#
+# mode: feature        normal change; only listed symbols may be modified/deleted
+# mode: refactor-split behaviour-preserving split; deleted symbols must reappear
+#                      byte-identical in another file
+mode: feature
+# Existing functions/classes/methods you may modify or delete. Example:
+#   symbols: [getUserById, BillingClient.createCheckout]
+symbols: []
+# Optional: if non-empty, only files matching these globs may change. Example: [src/billing/*]
+paths: []
+# Files you may delete (owner approval is still required by AGENTS.md).
+delete_files: []
+max_changed_lines: 300
+max_files: 15

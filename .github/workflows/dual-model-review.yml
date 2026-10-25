@@ -1,0 +1,74 @@
+name: Dual-model review
+
+# Runs on PRs and on pushes to staging (same check name on the same commit),
+# so bot-opened staging -> main PRs still get a verdict.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, edited]
+  push:
+    branches: [staging]
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: dual-review-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  dual-model-review:
+    name: dual-model-review
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Autonomy level (probation makes the review mandatory)
+        id: autonomy
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ai/autonomy.py --repo "$GITHUB_REPOSITORY" | tee -a "$GITHUB_OUTPUT"
+      - name: Second-model review
+        id: review
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DUAL_REVIEW_PROVIDER: ${{ vars.DUAL_REVIEW_PROVIDER }}
+          DUAL_REVIEW_MODEL: ${{ vars.DUAL_REVIEW_MODEL }}
+          DUAL_REVIEW_REQUIRED: ${{ vars.DUAL_REVIEW_REQUIRED == 'true' || steps.autonomy.outputs.dual_review_required == 'true' }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set +e
+          [ -n "$BASE_SHA" ] || BASE_SHA="$(git merge-base origin/main HEAD)"
+          python3 scripts/ai/dual_review.py --base "$BASE_SHA" --out dual-review.md --json-out dual-review.json
+          code=$?
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          cat dual-review.md >> "$GITHUB_STEP_SUMMARY"
+          exit 0
+      - name: Post or update PR comment
+        if: github.event_name == 'pull_request'
+        continue-on-error: true # fork PRs get a read-only token
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          id="$(gh api "repos/$GH_REPO/issues/$PR_NUMBER/comments" --paginate \
+            --jq '.[] | select(.body | startswith("<!-- dual-model-review -->")) | .id' | tail -n 1)"
+          if [ -n "$id" ]; then
+            gh api -X PATCH "repos/$GH_REPO/issues/comments/$id" -F body=@dual-review.md >/dev/null
+          else
+            gh pr comment "$PR_NUMBER" --body-file dual-review.md
+          fi
+      - name: Verdict
+        env:
+          CODE: ${{ steps.review.outputs.code }}
+        run: |
+          if [ "$CODE" != "0" ]; then
+            echo "::error::Dual-model review did not approve (exit $CODE). See the PR comment."
+            exit 1
+          fi

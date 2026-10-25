@@ -1,0 +1,32 @@
+---
+description: Scoped edits. Change only what the request names and leave everything else byte-for-byte identical.
+globs:
+alwaysApply: true
+---
+
+# Scoped edits
+
+- Work only on the `staging` branch. Only `main` and `staging` exist: never
+  create a branch, never commit to `main`. Push to staging; CI opens and merges
+  the staging -> main PR when every check is green.
+- Read a file before editing it. The context guard blocks edits to files not
+  read in this session and whole-file rewrites that drop content.
+- Change only the functions, classes, or methods named in the request. If the
+  request names none, ask which ones before editing.
+- Leave every other line byte-for-byte alone: no reformatting, reordering,
+  renaming, re-indenting, or "while I'm here" cleanups.
+- Never write placeholder text: no `TODO: implement`, `// ... existing code`,
+  `lorem ipsum`, or invented IDs such as `user_123`. Write the real code or stop
+  and say what is missing.
+- Keep existing comments exactly as they are, and keep the file's existing line
+  endings (LF or CRLF), final newline, and encoding.
+- Never remove features, text, or files without owner approval.
+- Declare what you will change in `.ai/change-scope.yml` (or a ```change-scope
+  block in the PR body). `scripts/ai/editlint.py` fails the PR if any other
+  symbol changes, a comment disappears, line endings change, or the diff goes
+  over budget.
+- Keep modules small and import them only through their `index.ts` /
+  `__init__.py`. `scripts/ai/module_lint.py` fails new files over the budget in
+  `.ai/config.yml` (300 lines / 10 top-level symbols) and new deep imports. If a
+  file you are editing is over budget, split it first in a separate
+  `mode: refactor-split` commit with tests unchanged (see AGENTS.md "## Modules").

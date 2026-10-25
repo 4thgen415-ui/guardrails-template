@@ -1,0 +1,47 @@
+name: Reset staging
+
+# Keeps staging on top of main. After each merge (and every 30 minutes, since
+# bot-made merges do not start push workflows) staging is fast-forwarded to
+# main. A manual "hard" run archives staging as a tag and resets it to main.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "sync = fast-forward only; hard = archive staging as a tag, then reset it to main"
+        type: choice
+        options: [sync, hard]
+        default: sync
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: reset-staging
+  cancel-in-progress: false
+
+jobs:
+  reset-staging:
+    name: reset-staging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Sync or reset staging
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MODE: ${{ inputs.mode || 'sync' }}
+        run: |
+          if ! gh api "repos/$GH_REPO/git/ref/heads/staging" >/dev/null 2>&1; then
+            echo "::warning::staging does not exist yet; the Bootstrap workflow creates it."
+            exit 0
+          fi
+          if [ "$MODE" = "hard" ]; then
+            scripts/ai/pr-loop.sh reset-staging "manual hard reset by $GITHUB_ACTOR"
+          else
+            scripts/ai/pr-loop.sh sync-staging
+          fi

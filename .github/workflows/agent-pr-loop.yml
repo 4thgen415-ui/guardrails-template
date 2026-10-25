@@ -1,0 +1,155 @@
+name: Agent PR loop
+
+# Exactly two branches: agents push to staging, this keeps one staging -> main
+# PR open with auto-merge (merge commit; staging is never deleted). Failed
+# checks label and comment the PR, staging self-heals by bisect + revert when
+# autonomy allows, and after 3 failed pushes staging is archived as a tag and
+# reset to main. If main breaks after a merge, the merge is auto-reverted
+# through staging (main is never pushed to directly).
+#
+# GUARDRAILS_ADMIN_TOKEN (fine-grained PAT, one-time owner setup) is used when
+# present: pushes, PRs and merges made with the default GITHUB_TOKEN do not start
+# other workflows, so without it CI does not run on bot-made commits.
+on:
+  push:
+    branches: [staging]
+  pull_request:
+    types: [opened, reopened, ready_for_review, closed]
+    branches: [main]
+  workflow_run:
+    workflows: ["AI Guardrails", "CodeQL", "Dual-model review"]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  actions: read
+  checks: read
+
+concurrency:
+  group: agent-pr-loop-${{ github.event_name }}-${{ github.event.workflow_run.id || github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  open-pr:
+    name: open-pr
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Open or update the staging -> main PR and enable auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.GUARDRAILS_ADMIN_TOKEN || github.token }}
+          HAS_ADMIN_TOKEN: ${{ secrets.GUARDRAILS_ADMIN_TOKEN != '' }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if [ "$HAS_ADMIN_TOKEN" != "true" ]; then
+            echo "::warning::GUARDRAILS_ADMIN_TOKEN is not set: the PR and its merge are made with GITHUB_TOKEN, so merges into main do not start push workflows. Checks still run from the push to staging."
+          fi
+          scripts/ai/pr-loop.sh open-pr
+          pr="$(gh pr list --head staging --base main --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$pr" ]; then scripts/ai/pr-loop.sh auto-merge "$pr"; fi
+
+  auto-merge:
+    name: auto-merge
+    if: >-
+      github.event_name == 'pull_request' && github.event.action != 'closed' &&
+      github.event.pull_request.head.ref == 'staging' &&
+      github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Enable auto-merge (merge commit)
+        env:
+          GH_TOKEN: ${{ secrets.GUARDRAILS_ADMIN_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: scripts/ai/pr-loop.sh auto-merge "$PR_NUMBER"
+
+  merged:
+    name: merged
+    if: >-
+      github.event_name == 'pull_request' && github.event.action == 'closed' &&
+      github.event.pull_request.merged && github.event.pull_request.head.ref == 'staging'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Log the merge and fast-forward staging to main
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          scripts/ai/pr-loop.sh log merged "PR #$PR_NUMBER"
+          scripts/ai/pr-loop.sh sync-staging
+
+  result:
+    name: result
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.head_branch == 'staging' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GUARDRAILS_ADMIN_TOKEN || github.token }}
+      - name: Label, comment, enforce retry cap
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_NAME: ${{ github.event.workflow_run.name }}
+          CONCLUSION: ${{ github.event.workflow_run.conclusion }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+          PR_NUMBER: ${{ github.event.workflow_run.pull_requests[0].number }}
+        run: scripts/ai/pr-loop.sh result
+      - name: Autonomy level
+        id: autonomy
+        if: github.event.workflow_run.conclusion == 'failure' && github.event.workflow_run.name == 'AI Guardrails'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python3 scripts/ai/autonomy.py --repo "$GITHUB_REPOSITORY" | tee -a "$GITHUB_OUTPUT"
+      - name: Self-heal staging (bisect + revert, no force push)
+        if: steps.autonomy.outputs.self_heal == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git fetch -q origin main staging
+          if [ "$(git rev-parse origin/staging)" != "$HEAD_SHA" ]; then
+            echo "staging moved since this run; skipping self-heal"; exit 0
+          fi
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          bash <(curl -fsSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash) >/dev/null
+          export PATH="$PWD:$PATH"
+          git checkout -q origin/staging
+          CHECK_CMD="scripts/ai/run-all-checks.sh" scripts/ai/self-heal.sh || echo "::warning::self-heal could not isolate a fix; the retry cap still applies"
+
+  auto-revert:
+    name: auto-revert
+    if: >-
+      github.event_name == 'workflow_run' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.conclusion == 'failure'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GUARDRAILS_ADMIN_TOKEN || github.token }}
+      - name: Revert the breaking merge through staging
+        env:
+          GH_TOKEN: ${{ secrets.GUARDRAILS_ADMIN_TOKEN || github.token }}
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          scripts/ai/pr-loop.sh auto-revert "$HEAD_SHA"

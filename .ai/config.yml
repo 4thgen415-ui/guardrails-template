@@ -1,0 +1,29 @@
+# Module budget used by scripts/ai/module_lint.py (see AGENTS.md "## Modules").
+module_max_lines: 300
+module_max_symbols: 10
+# Directories holding app code. Example for a Cloudflare Worker: [src]
+source_dirs: [src, examples]
+# Files that form a module's public interface.
+index_files: [index.ts, index.tsx, index.js, index.mjs, __init__.py]
+# Package registry check (scripts/ai/package_check.py): new dependencies must
+# exist on the public registry and be at least this many days old.
+package_min_age_days: 30
+# Packages exempt from the age check (still must exist), e.g. your own scope.
+package_age_allow: []
+# Status checks that must be green before anything merges into main
+# (applied by bootstrap.yml / sentinel.yml as branch protection).
+required_checks:
+  - guardrails
+  - tests-untouched
+  - editlint
+  - module-lint
+  - backstops
+  - packages
+  - app-checks
+  - source-is-staging
+  - branch-policy
+  - dual-model-review
+  - analyze (javascript-typescript)
+# Branches allowed besides main and staging (bots and Pages). Sentinel archives
+# and deletes anything else.
+allowed_branch_patterns: ["dependabot/*", "gh-pages"]

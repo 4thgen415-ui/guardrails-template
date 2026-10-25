@@ -1,0 +1,28 @@
+#!/usr/bin/env bash
+# Installed by scripts/ai/install-hooks.sh (git config core.hooksPath .githooks).
+# Branch topology: exactly two branches, main and staging. Agents work only on
+# staging and never create branches.
+#  - Agent environment (CLAUDECODE=1 from Claude Code, or AI_AGENT=1 set in any
+#    other agent shell): commits are allowed only on staging.
+#  - On staging, a commit may not mix test and non-test changes.
+#  - Placeholder/secret rules run on the whole tree.
+set -euo pipefail
+root="$(git rev-parse --show-toplevel)"
+branch="$(git symbolic-ref --short -q HEAD || echo detached)"
+agent=0
+if [[ "${CLAUDECODE:-}" == "1" || "${AI_AGENT:-}" == "1" ]]; then agent=1; fi
+
+if [[ "$agent" == "1" && "$branch" != "staging" ]]; then
+  if [[ "$branch" == "main" ]]; then
+    echo "pre-commit: agents never commit to main. Commit on staging: git switch staging" >&2
+  else
+    echo "pre-commit: agents never create branches (on '$branch'). Only main and staging exist; work on staging." >&2
+  fi
+  exit 1
+fi
+
+if [[ "$branch" == "staging" ]]; then
+  "$root/scripts/ai/check-tests-untouched.sh" --staged
+fi
+
+"$root/scripts/ai/review-rules.sh" "$root"

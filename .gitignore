@@ -1,0 +1,15 @@
+node_modules/
+dist/
+.wrangler/
+.dev.vars
+.env
+.env.*
+coverage/
+__pycache__/
+*.pyc
+# local test-lock marker (scripts/ai/lock-tests.sh)
+.ai/tests-locked
+dual-review.md
+dual-review.json
+sentinel.json
+sentinel.txt
