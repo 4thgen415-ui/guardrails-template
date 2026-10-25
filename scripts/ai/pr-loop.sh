@@ -113,11 +113,43 @@ sync_staging() {
   esac
 }
 
+# Did the run actually execute anything? Prints one of:
+#   verified         at least one job started steps (a real pass/fail)
+#   startup-failure  GitHub could not start the workflow (conclusion startup_failure)
+#   no-jobs          the run has zero jobs (e.g. bot-token PR runs awaiting approval)
+#   billing          jobs were refused for billing/spending-limit reasons
+#   not-started      jobs exist but none started a step
+# Anything but "verified" is unverifiable: never a strike, never a revert.
+classify_run() {
+  local run_id="${1:?run id}" conclusion="${2:-}"
+  if [[ "$conclusion" == "startup_failure" ]]; then echo startup-failure; return 0; fi
+  local total started
+  total="$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs" --jq '.total_count' 2>/dev/null || echo "")"
+  if [[ -z "$total" ]]; then echo verified; return 0; fi  # API unavailable: fall back to the conclusion
+  if [[ "$total" == "0" ]]; then echo no-jobs; return 0; fi
+  started="$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs" --jq '[.jobs[] | select((.steps // []) | length > 0)] | length' 2>/dev/null || echo 1)"
+  if [[ "$started" != "0" ]]; then echo verified; return 0; fi
+  local notes
+  notes="$(gh api "repos/$GH_REPO/actions/runs/$run_id/jobs" --jq '.jobs[].check_run_url' 2>/dev/null | head -n 3 |
+    while read -r url; do [[ -n "$url" ]] && gh api "$url/annotations" --jq '.[].message' 2>/dev/null; done || true)"
+  if grep -qiE "payments have failed|spending limit|billing" <<<"$notes"; then echo billing; else echo not-started; fi
+}
+
+set_verdict() {
+  echo "pr-loop verdict: $1"
+  if [[ -n "${GITHUB_OUTPUT:-}" ]]; then echo "verdict=$1" >>"$GITHUB_OUTPUT"; fi
+}
+
 handle_result() {
   : "${RUN_ID:?}" "${CONCLUSION:?}" "${HEAD_SHA:?}" "${HEAD_BRANCH:?}"
   if [[ "$HEAD_BRANCH" != "staging" ]]; then
     echo "Not staging ($HEAD_BRANCH); nothing to do."
+    set_verdict ignored
     return 0
+  fi
+  local kind=verified
+  if [[ "$CONCLUSION" == "failure" || "$CONCLUSION" == "timed_out" || "$CONCLUSION" == "startup_failure" ]]; then
+    kind="$(classify_run "$RUN_ID" "$CONCLUSION")"
   fi
   local pr="${PR_NUMBER:-}"
   if [[ -z "$pr" ]]; then
@@ -125,6 +157,29 @@ handle_result() {
   fi
   if [[ -z "$pr" ]]; then
     echo "No open staging -> main PR; nothing to do."
+    set_verdict ignored
+    return 0
+  fi
+  if [[ "$kind" != "verified" ]]; then
+    echo "Run $RUN_ID did not execute ($kind); unverifiable, not counted as a strike."
+    if [[ "$kind" == "billing" ]]; then
+      ensure_label ai-unverifiable fbca04 "Checks could not run (billing/spending limit); not a pass or a fail"
+      gh pr edit "$pr" --add-label ai-unverifiable >/dev/null 2>&1 || true
+      local ub
+      ub="$(gh api "repos/$GH_REPO/issues/$pr/comments" --paginate --jq '.[].body' 2>/dev/null || true)"
+      if ! grep -qF "ai-pr-loop:unverifiable run=$RUN_ID -->" <<<"$ub"; then
+        gh pr comment "$pr" --body-file - <<COMMENT
+<!-- ai-pr-loop:unverifiable run=$RUN_ID -->
+### ${RUN_NAME:-Workflow} could not run on \`${HEAD_SHA:0:7}\` (unverifiable)
+
+GitHub refused the jobs for billing or spending-limit reasons. This is not a
+pass and not a failure: no strike is counted and nothing is reverted. Fix
+Billing & plans, then re-run: ${GITHUB_SERVER_URL:-https://github.com}/$GH_REPO/actions/runs/$RUN_ID
+COMMENT
+        log_event unverifiable "PR #$pr ${RUN_NAME:-workflow} run $RUN_ID sha ${HEAD_SHA:0:7} ($kind)"
+      fi
+    fi
+    set_verdict unverifiable
     return 0
   fi
 
@@ -136,9 +191,12 @@ handle_result() {
       gh pr edit "$pr" --remove-label ai-failing >/dev/null 2>&1 || true
       echo "No failing checks on $HEAD_SHA; removed ai-failing from #$pr if present."
     fi
+    if [[ "$CONCLUSION" == "success" ]]; then gh pr edit "$pr" --remove-label ai-unverifiable >/dev/null 2>&1 || true; fi
+    set_verdict passing
     return 0
   fi
 
+  set_verdict failing
   ensure_label ai-failing d73a4a "A required check failed on the latest staging push"
   ensure_label ai-retry-cap-reached 5319e7 "Staging reset to main after $MAX_ATTEMPTS failed attempts"
   gh pr edit "$pr" --add-label ai-failing >/dev/null
@@ -188,6 +246,14 @@ COMMENT
 auto_revert() {
   # Needs a checkout with push access to staging (GUARDRAILS_ADMIN_TOKEN so CI runs on the push).
   local bad="${1:?sha}"
+  if [[ -n "${RUN_ID:-}" ]]; then
+    local kind
+    kind="$(classify_run "$RUN_ID" "${CONCLUSION:-failure}")"
+    if [[ "$kind" != "verified" ]]; then
+      echo "auto-revert: run $RUN_ID did not execute ($kind); unverifiable, not reverting"
+      return 0
+    fi
+  fi
   git fetch -q origin main staging
   if ! git log -1 --format=%s "$bad" | grep -qE '^Merge pull request #[0-9]+ from [^ ]+/staging$'; then
     echo "auto-revert: ${bad:0:7} is not a staging merge; not reverting (main is changed only through staging PRs)"
@@ -217,9 +283,10 @@ case "${1:-}" in
   open-pr) open_pr ;;
   auto-merge) auto_merge "${2:?pr number}" ;;
   result) handle_result ;;
+  classify) classify_run "${2:?run id}" "${3:-}" ;;
   sync-staging) sync_staging ;;
   reset-staging) reset_staging "${2:-manual}" ;;
   auto-revert) auto_revert "${2:?sha}" ;;
   log) log_event "${2:?event}" "${3:-}" ;;
-  *) echo "usage: pr-loop.sh open-pr | auto-merge PR | result | sync-staging | reset-staging REASON | auto-revert SHA | log EVENT [DETAILS]" >&2; exit 2 ;;
+  *) echo "usage: pr-loop.sh open-pr | auto-merge PR | result | classify RUN_ID [CONCLUSION] | sync-staging | reset-staging REASON | auto-revert SHA | log EVENT [DETAILS]" >&2; exit 2 ;;
 esac
