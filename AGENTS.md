@@ -128,7 +128,9 @@ Exactly two branches exist: `main` (protected, changes only through a PR from
    that broke the checks, reverts it, and pushes the revert to `staging` (never
    a force push). After 3 failed pushes the PR is labeled `ai-retry-cap-reached` and
    closed, and `staging` is archived as a tag `archive/staging-<time>-<sha>` and
-   reset to `main`.
+   reset to `main`. A run that never executed (no jobs, `startup_failure`, or
+   jobs refused for billing) is unverifiable: it is not a strike and triggers
+   neither self-heal nor auto-revert; billing refusals get `ai-unverifiable`.
 5. If `main` fails after a merge, CI reverts that merge through `staging`
    (auto-revert) and records it in the activity log issue.
 6. Stray branches are archived as tags and deleted by the sentinel; a ruleset

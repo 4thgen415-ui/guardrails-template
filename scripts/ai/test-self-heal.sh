@@ -29,13 +29,18 @@ if grep -q "nothing to heal" <<<"$out2"; then pass=$((pass+1)); echo "ok   healt
 
 # auto-revert: a staging merge that broke main is reverted through staging.
 mkdir -p "$tmp/bin"
-printf '#!/usr/bin/env bash\necho "gh $*" >> "%s/gh.log"\ncase "$*" in *compare*ahead_by*) echo 1 ;; *"pr list"*) echo "" ;; *"issue list"*) echo 1 ;; esac\nexit 0\n' "$tmp" > "$tmp/bin/gh"
+# shellcheck disable=SC2016  # the fake gh script must expand at its own runtime
+printf '#!/usr/bin/env bash\necho "gh $*" >> "%s/gh.log"\ncase "$*" in *compare*ahead_by*) echo 1 ;; *"pr list"*) echo "" ;; *"issue list"*) echo 1 ;; *"jobs --jq .total_count"*) echo "${FAKE_JOB_COUNT:-3}" ;; *"jobs --jq [.jobs"*) echo 3 ;; esac\nexit 0\n' "$tmp" > "$tmp/bin/gh"
 chmod +x "$tmp/bin/gh"
 git switch -q main
 git merge -q --no-ff origin/staging -m "Merge pull request #5 from o/staging"
 git push -q origin main
 merge_sha="$(git rev-parse HEAD)"
-PATH="$tmp/bin:$PATH" GH_REPO=o/r "$script_dir/pr-loop.sh" auto-revert "$merge_sha" >/dev/null 2>&1 || true
+staging_before="$(git rev-parse origin/staging)"
+out0="$(PATH="$tmp/bin:$PATH" GH_REPO=o/r RUN_ID=77 CONCLUSION=failure FAKE_JOB_COUNT=0 "$script_dir/pr-loop.sh" auto-revert "$merge_sha" 2>&1)" || true
+git fetch -q origin
+if grep -q "unverifiable, not reverting" <<<"$out0" && [[ "$(git rev-parse origin/staging)" == "$staging_before" ]]; then pass=$((pass+1)); echo "ok   0-job main run is not auto-reverted"; else fail=$((fail+1)); echo "FAIL unverifiable revert: $out0"; fi
+PATH="$tmp/bin:$PATH" GH_REPO=o/r RUN_ID=78 CONCLUSION=failure "$script_dir/pr-loop.sh" auto-revert "$merge_sha" >/dev/null 2>&1 || true
 git fetch -q origin
 if git log -1 --format=%s origin/staging | grep -q '^Revert "Merge pull request #5'; then pass=$((pass+1)); echo "ok   auto-revert puts a revert on staging"; else fail=$((fail+1)); echo "FAIL auto-revert: $(git log -1 --format=%s origin/staging)"; fi
 if [[ "$(git rev-parse origin/main)" == "$merge_sha" ]]; then pass=$((pass+1)); echo "ok   auto-revert never pushes main"; else fail=$((fail+1)); echo "FAIL main changed"; fi

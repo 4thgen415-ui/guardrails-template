@@ -13,3 +13,6 @@
   symbols in the listed files (for example a stale file header).
 - Unit tests tolerate temp-dir cleanup races (background git gc on the runner).
 - sync-staging tolerates losing the race with reset-staging.yml after a merge.
+- PR loop: runs with no jobs, a startup_failure, or jobs refused for billing are
+  "unverifiable" (label `ai-unverifiable` for billing), never a strike, never a
+  self-heal or auto-revert trigger. `.ai/change-scope.yml` reset to an empty scope.
