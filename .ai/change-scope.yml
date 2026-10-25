@@ -8,9 +8,11 @@
 mode: feature
 # Existing functions/classes/methods you may modify or delete. Example:
 #   symbols: [getUserById, BillingClient.createCheckout]
-symbols: []
+symbols: [run, EditlintTests]
 # Optional: if non-empty, only files matching these globs may change. Example: [src/billing/*]
 paths: []
+# Files whose comments outside symbols may be rewritten (e.g. a stale header).
+edit_comments: [scripts/ai/self-heal.sh, .github/workflows/agent-pr-loop.yml]
 # Files you may delete (owner approval is still required by AGENTS.md).
 delete_files: []
 max_changed_lines: 300

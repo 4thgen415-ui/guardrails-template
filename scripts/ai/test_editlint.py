@@ -126,6 +126,14 @@ class EditlintTests(unittest.TestCase):
         fails = self.lint()
         self.assertTrue(any("comment removed" in f for f in fails), fails)
 
+    def test_edit_comments_allows_header_rewrite(self):
+        src = BASE_TS.replace('import { db } from "./db";\n', '// Data access goes through ./db only.\nimport { db } from "./db";\n')
+        self.repo.write("src/user-service.ts", src)
+        self.repo.commit("add module comment")
+        self.repo.git("branch", "-f", "main", "HEAD")
+        self.repo.write("src/user-service.ts", src.replace("./db only.", "./db and its cache."))
+        self.assertEqual(self.lint("```change-scope\nedit_comments: [src/user-service.ts]\n```"), [])
+
     def test_lost_comment_in_unscoped_method_fails_even_if_class_scoped(self):
         self.repo.write("src/user-service.ts", BASE_TS.replace("  // Creates a Stripe checkout session.\n", ""))
         fails = self.lint("```change-scope\nsymbols: [BillingClient]\n```")
