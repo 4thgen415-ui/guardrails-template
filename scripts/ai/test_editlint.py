@@ -41,7 +41,7 @@ export class BillingClient {
 
 class GitRepo:
     def __init__(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.path = Path(self.tmp.name)
         self.old_cwd = os.getcwd()
         os.chdir(self.path)
@@ -49,6 +49,9 @@ class GitRepo:
         self.git("config", "user.email", "t@t")
         self.git("config", "user.name", "t")
         self.git("config", "core.autocrlf", "false")
+        # No background gc/maintenance, which can race the temp-dir cleanup.
+        self.git("config", "gc.auto", "0")
+        self.git("config", "maintenance.auto", "false")
 
     def git(self, *args):
         subprocess.run(["git", *args], check=True, capture_output=True)
@@ -125,6 +128,14 @@ class EditlintTests(unittest.TestCase):
         self.repo.write("src/user-service.ts", BASE_TS)
         fails = self.lint()
         self.assertTrue(any("comment removed" in f for f in fails), fails)
+
+    def test_edit_comments_allows_header_rewrite(self):
+        src = BASE_TS.replace('import { db } from "./db";\n', '// Data access goes through ./db only.\nimport { db } from "./db";\n')
+        self.repo.write("src/user-service.ts", src)
+        self.repo.commit("add module comment")
+        self.repo.git("branch", "-f", "main", "HEAD")
+        self.repo.write("src/user-service.ts", src.replace("./db only.", "./db and its cache."))
+        self.assertEqual(self.lint("```change-scope\nedit_comments: [src/user-service.ts]\n```"), [])
 
     def test_lost_comment_in_unscoped_method_fails_even_if_class_scoped(self):
         self.repo.write("src/user-service.ts", BASE_TS.replace("  // Creates a Stripe checkout session.\n", ""))

@@ -5,7 +5,8 @@ Compares BASE (merge-base with --base) against HEAD for every changed file and
 FAILS when:
   * an existing symbol (function, class, method, top-level const/type) that is
     not on the allowlist is deleted or modified;
-  * a comment present in BASE is missing in HEAD (outside allowlisted symbols);
+  * a comment present in BASE is missing in HEAD (outside allowlisted symbols
+    and files listed in edit_comments);
   * a file's line endings, final newline, or BOM change;
   * the change exceeds the budget (changed lines / files);
   * a file outside the declared `paths` changes, or a file is deleted without
@@ -42,6 +43,7 @@ DEFAULT_SCOPE = {
     "symbols": [],
     "paths": [],
     "delete_files": [],
+    "edit_comments": [],
     "max_changed_lines": 300,
     "max_files": 15,
 }
@@ -290,6 +292,10 @@ def run(base: str, head: str, pr_body: str | None) -> list[str]:
                     if child not in allowed and child in old_syms:
                         rng -= set(range(old_syms[child].start, old_syms[child].end))
                 exempt.update(rng)
+        # Files listed in edit_comments may have comments outside symbols rewritten
+        # (for example a stale file header). Declared explicitly, like symbols.
+        if any(fnmatch.fnmatch(path, g) for g in (scope.get("edit_comments") or [])):
+            continue
         base_comments = Counter(c for i, c in extract_comments(old, path) if i not in exempt)
         head_comments = Counter(c for _, c in extract_comments(new, path))
         for c, n in base_comments.items():

@@ -10,7 +10,7 @@ import context_guard  # noqa: E402
 
 class ContextGuardTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.d = self.tmp.name
         self.file = os.path.join(self.d, "a.ts")
         with open(self.file, "w") as fh:

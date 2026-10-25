@@ -117,7 +117,7 @@ class HookTests(unittest.TestCase):
 
 class DiffModeTests(unittest.TestCase):
     def test_diff_mode(self):
-        with tempfile.TemporaryDirectory() as d:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as d:
             cwd = os.getcwd()
             os.chdir(d)
             self.addCleanup(os.chdir, cwd)

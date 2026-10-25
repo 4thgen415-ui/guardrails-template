@@ -9,6 +9,8 @@ on:
     types: [opened, synchronize, reopened, edited]
   push:
     branches: [main, staging]
+  # Manual re-run on staging re-creates the required check runs on its head commit.
+  workflow_dispatch:
 
 permissions:
   contents: read

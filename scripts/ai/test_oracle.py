@@ -12,7 +12,7 @@ import oracle  # noqa: E402
 
 class OracleTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = self.tmp.name
         os.makedirs(os.path.join(self.root, ".ai/oracles"))
 

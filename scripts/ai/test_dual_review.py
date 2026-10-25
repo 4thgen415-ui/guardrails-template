@@ -50,7 +50,7 @@ def openai_opener(verdict, seen):
 
 class DualReviewTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.dir = Path(self.tmp.name)
         self.diff = self.dir / "pr.diff"
         self.diff.write_text("--- a/src/a.ts\n+++ b/src/a.ts\n+export function getUserById() {}\n")

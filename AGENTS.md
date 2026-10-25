@@ -124,9 +124,9 @@ Exactly two branches exist: `main` (protected, changes only through a PR from
    check is green, including `source-is-staging` and `branch-policy`, the PR
    merges with a merge commit and `staging` is fast-forwarded to `main`.
 4. On failure the PR is labeled `ai-failing` with the failing output in a
-   comment. When autonomy allows, CI bisects `main..staging`, reverts the commit
-   that broke the checks, and pushes the revert to `staging` (never a force push
-   to `main`). After 3 failed pushes the PR is labeled `ai-retry-cap-reached` and
+   comment. When autonomy allows, CI finds the first commit in `main..staging`
+   that broke the checks, reverts it, and pushes the revert to `staging` (never
+   a force push). After 3 failed pushes the PR is labeled `ai-retry-cap-reached` and
    closed, and `staging` is archived as a tag `archive/staging-<time>-<sha>` and
    reset to `main`.
 5. If `main` fails after a merge, CI reverts that merge through `staging`

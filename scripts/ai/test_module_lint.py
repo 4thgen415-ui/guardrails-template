@@ -15,7 +15,7 @@ import module_lint  # noqa: E402
 
 class ModuleLintTests(unittest.TestCase):
     def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
+        self.tmp = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.root = Path(self.tmp.name)
         self.cwd = os.getcwd()
         os.chdir(self.root)
