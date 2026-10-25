@@ -20,7 +20,7 @@ git push -q origin staging
 bad_sha="$(git rev-parse HEAD~1)"
 out="$(CHECK_CMD='grep -qx ok status.txt' "$script_dir/self-heal.sh" 2>&1)" || true
 pass=0; fail=0
-if grep -q "SELF_HEAL_REVERTED=$bad_sha" <<<"$out"; then pass=$((pass+1)); echo "ok   bisect finds the bad commit"; else fail=$((fail+1)); echo "FAIL bisect: $out"; fi
+if grep -q "SELF_HEAL_REVERTED=$bad_sha" <<<"$out"; then pass=$((pass+1)); echo "ok   finds the first bad commit"; else fail=$((fail+1)); echo "FAIL find bad commit: $out"; fi
 git fetch -q origin
 if [[ "$(git show origin/staging:status.txt)" == "ok" && -f b.txt ]]; then pass=$((pass+1)); echo "ok   revert pushed, good commits kept"; else fail=$((fail+1)); echo "FAIL staging content"; fi
 if git merge-base --is-ancestor "$bad_sha" origin/staging; then pass=$((pass+1)); echo "ok   history kept (no force push)"; else fail=$((fail+1)); echo "FAIL history rewritten"; fi

@@ -2,7 +2,7 @@ name: Agent PR loop
 
 # Exactly two branches: agents push to staging, this keeps one staging -> main
 # PR open with auto-merge (merge commit; staging is never deleted). Failed
-# checks label and comment the PR, staging self-heals by bisect + revert when
+# checks label and comment the PR, staging self-heals (first failing commit + revert) when
 # autonomy allows, and after 3 failed pushes staging is archived as a tag and
 # reset to main. If main breaks after a merge, the merge is auto-reverted
 # through staging (main is never pushed to directly).
@@ -113,7 +113,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: python3 scripts/ai/autonomy.py --repo "$GITHUB_REPOSITORY" | tee -a "$GITHUB_OUTPUT"
-      - name: Self-heal staging (bisect + revert, no force push)
+      - name: Self-heal staging (find first failing commit + revert, no force push)
         if: steps.autonomy.outputs.self_heal == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
