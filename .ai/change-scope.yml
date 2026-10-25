@@ -8,11 +8,11 @@
 mode: feature
 # Existing functions/classes/methods you may modify or delete. Example:
 #   symbols: [getUserById, BillingClient.createCheckout]
-symbols: [run, EditlintTests, DiffModeTests.test_diff_mode, ContextGuardTest.setUp, DualReviewTests.setUp, GitRepo.__init__, ModuleLintTests.setUp, OracleTest.setUp]
+symbols: [sync_staging]
 # Optional: if non-empty, only files matching these globs may change. Example: [src/billing/*]
 paths: []
 # Files whose comments outside symbols may be rewritten (e.g. a stale header).
-edit_comments: [scripts/ai/self-heal.sh, .github/workflows/agent-pr-loop.yml]
+edit_comments: []
 # Files you may delete (owner approval is still required by AGENTS.md).
 delete_files: []
 max_changed_lines: 300

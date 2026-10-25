@@ -99,8 +99,15 @@ sync_staging() {
   case "$status" in
     identical) echo "staging == main" ;;
     behind)
-      gh api -X PATCH "repos/$GH_REPO/git/refs/heads/staging" -f sha="$(ref_sha main)" -F force=false >/dev/null
-      echo "staging fast-forwarded to main" ;;
+      if gh api -X PATCH "repos/$GH_REPO/git/refs/heads/staging" -f sha="$(ref_sha main)" -F force=false >/dev/null; then
+        echo "staging fast-forwarded to main"
+      else
+        # reset-staging.yml and the merged job both sync on a merge; if the other
+        # one won the race, staging is already at main.
+        status="$(gh api "repos/$GH_REPO/compare/main...staging" --jq .status)"
+        [[ "$status" == "identical" ]] || { echo "::error::could not fast-forward staging (now $status)"; return 1; }
+        echo "staging already at main"
+      fi ;;
     ahead) echo "staging has unmerged work ahead of main; left as is" ;;
     diverged) echo "staging has new work and main has merge commits it lacks; the next staging -> main merge reconciles them" ;;
   esac

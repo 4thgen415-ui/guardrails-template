@@ -16,7 +16,9 @@ case "$args" in
   "api repos/o/r/git/ref/heads/main"*) echo "${FAKE_MAIN_SHA:-1111111aaaa}" ;;
   "api repos/o/r/git/ref/heads/staging"*) echo "${FAKE_STAGING_SHA:-2222222bbbb}" ;;
   "api repos/o/r/compare/main...staging --jq .ahead_by") echo "${FAKE_AHEAD:-1}" ;;
-  "api repos/o/r/compare/main...staging --jq .status") echo "${FAKE_STATUS:-behind}" ;;
+  "api repos/o/r/compare/main...staging --jq .status")
+    if [[ -s "${FAKE_STATUS_FILE:-/nonexistent}" ]]; then head -1 "$FAKE_STATUS_FILE"; sed -i 1d "$FAKE_STATUS_FILE"; else echo "${FAKE_STATUS:-behind}"; fi ;;
+  "api -X PATCH repos/o/r/git/refs/heads/staging"*) [[ -z "${FAKE_PATCH_FAIL:-}" ]] || exit 1 ;;
   "pr list"*) echo "${FAKE_OPEN_PR:-}" ;;
   "issue list"*) echo "${FAKE_LOG_ISSUE:-42}" ;;
   "pr comment"*|"issue comment"*) cat >/dev/null ;;
@@ -72,6 +74,10 @@ FAKE_STATUS=behind run sync-staging
 check "sync fast-forwards staging" "git/refs/heads/staging -f sha=1111111aaaa -F force=false"
 FAKE_STATUS=ahead run sync-staging
 check_not "sync leaves unmerged work" "PATCH"
+printf 'behind\nidentical\n' >"$tmp/status"
+if FAKE_STATUS_FILE="$tmp/status" FAKE_PATCH_FAIL=1 run sync-staging; then pass=$((pass+1)); echo "ok   sync tolerates losing the race"; else fail=$((fail+1)); echo "FAIL sync race"; fi
+printf 'behind\ndiverged\n' >"$tmp/status"
+if FAKE_STATUS_FILE="$tmp/status" FAKE_PATCH_FAIL=1 run sync-staging 2>/dev/null; then fail=$((fail+1)); echo "FAIL sync real failure passed"; else pass=$((pass+1)); echo "ok   sync fails when staging really is stuck"; fi
 
 FAKE_MAIN_SHA=same FAKE_STAGING_SHA=same run reset-staging test
 check_not "reset no-op when equal" "PATCH"
