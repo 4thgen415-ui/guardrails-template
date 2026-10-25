@@ -4,6 +4,8 @@ on:
   pull_request:
   push:
     branches: [main, staging]
+  # Manual re-run on staging re-creates the required check runs on its head commit.
+  workflow_dispatch:
   schedule:
     - cron: "23 4 * * 1" # weekly, Monday 04:23 UTC
 
