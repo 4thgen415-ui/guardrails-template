@@ -65,6 +65,7 @@ CodeQL is free on public repos. Private repos need GitHub Advanced Security
 | Control | Enforced by | Automation |
 | --- | --- | --- |
 | Agent instructions | `AGENTS.md`, `.cursor/rules` | Advice only; the checks below enforce it |
+| Work modes (SANDBOX default, SHIP on request) | `AGENTS.md`, `scripts/ai/ship.sh`, pre-commit with `AI_MODE=ship` | SANDBOX hooks run fast checks only; `ship.sh` runs the full suite and every check |
 | Read-only tests | pre-edit hook, `lock-tests.sh`, pre-commit, CI `tests-untouched` | 100% automated after setup (no bypass label) |
 | Blast radius | CI `editlint` | 100% automated |
 | Modules | CI `module-lint` | 100% automated |

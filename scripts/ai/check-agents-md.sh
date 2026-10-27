@@ -20,6 +20,8 @@ required_headings=(
   "## Naming conventions"
   "## Modules"
   "## Never-dos"
+  "## Work modes: SANDBOX (default) and SHIP"
+  "## Maximum automation (owner rules)"
   "## Branch workflow"
   "## Definition of done"
   "## Verification"

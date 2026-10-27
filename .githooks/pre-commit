@@ -26,3 +26,9 @@ if [[ "$branch" == "staging" ]]; then
 fi
 
 "$root/scripts/ai/review-rules.sh" "$root"
+
+# Work mode (AGENTS.md "Work modes"): SANDBOX, the default, runs only the fast
+# checks above. SHIP (AI_MODE=ship) also runs the full suite before each commit.
+if [[ "${AI_MODE:-sandbox}" == "ship" ]]; then
+  "$root/scripts/ai/ship.sh" --suite
+fi

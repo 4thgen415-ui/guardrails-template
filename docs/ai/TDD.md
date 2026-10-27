@@ -20,6 +20,18 @@ Red, green, refactor, with the tests owned by the owner and read-only for the ag
 5. **Unlock (owner).** `scripts/ai/unlock-tests.sh` when the owner writes the
    next set of tests.
 
+## Work modes: when test-first applies
+
+- SANDBOX (default, AGENTS.md "Work modes"): test-first applies to behaviour and
+  logic changes. Cosmetic or copy tweaks (layout, spacing, colours, wording)
+  need no new test and no full test run; at most one quick check under ~1
+  minute (typecheck of the touched package or one targeted test).
+- SHIP ("push this", "ship it", "deploy"): full red-green-refactor for every
+  behaviour change, and the full suite plus every check via
+  `scripts/ai/ship.sh`. Nothing merges to `main` until it is green.
+- Both modes: tests stay owner-only; locked and protected tests are never
+  edited or weakened.
+
 ## Prompt template (copy and paste)
 
 ```text

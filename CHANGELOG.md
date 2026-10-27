@@ -1,5 +1,19 @@
 # Changelog
 
+## 2026-10-27
+
+- AGENTS.md: new sections "Work modes: SANDBOX (default) and SHIP" (fast edits
+  and no full test runs while the owner requests changes; full suite, split
+  ships under 400 lines, merge and safe deploy only on "push this" / "ship it" /
+  "deploy") and "Maximum automation (owner rules)" (owner's own wording).
+  check-agents-md.sh requires both headings.
+- docs/ai/TDD.md, .cursor/rules/tdd.mdc, new .cursor/rules/work-modes.mdc:
+  test-first for behaviour/logic changes; not for cosmetic or copy tweaks in
+  SANDBOX; full red-green-refactor and the full suite at SHIP.
+- New scripts/ai/ship.sh (the SHIP gate, `--suite` for the full suite only).
+  The pre-commit hook runs the full suite only when AI_MODE=ship. Claude hooks
+  and the pre-edit guard are unchanged (fast checks, always on).
+
 ## 2026-10-25
 
 - Initial template: AGENTS.md, TDD docs, Cursor rules, Claude hooks, CodeQL,

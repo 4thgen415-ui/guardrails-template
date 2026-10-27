@@ -12,3 +12,8 @@ alwaysApply: true
 - If a test looks wrong, stop and report it. Do not change it.
 - Refactor only while all tests are green, and re-run them after.
 - CI fails any PR that changes test files together with other files.
+- Test-first applies to behaviour and logic changes. In SANDBOX (the default,
+  AGENTS.md "Work modes") cosmetic or copy tweaks need no new test and no full
+  run: at most one quick check under ~1 minute.
+- At SHIP ("push this", "ship it", "deploy"): full red-green-refactor and the
+  full suite via `scripts/ai/ship.sh`. Locked tests stay read-only in both modes.
