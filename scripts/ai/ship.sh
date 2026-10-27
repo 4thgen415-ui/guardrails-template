@@ -22,7 +22,9 @@ fi
 base="${1:-origin/main}"
 failed=()
 if suite; then echo "--- PASS full suite"; else echo "--- FAIL full suite"; failed+=("full suite"); fi
-if scripts/ai/run-all-checks.sh "$base"; then echo "--- PASS run-all-checks"; else echo "--- FAIL run-all-checks"; failed+=("run-all-checks"); fi
+# The guardrail self-tests build fixture repos with their own hooks; run them in
+# the default mode so a fixture commit does not start this repo's full suite.
+if env -u AI_MODE scripts/ai/run-all-checks.sh "$base"; then echo "--- PASS run-all-checks"; else echo "--- FAIL run-all-checks"; failed+=("run-all-checks"); fi
 echo
 if [[ ${#failed[@]} -gt 0 ]]; then
   echo "SHIP BLOCKED: ${failed[*]}"
