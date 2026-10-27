@@ -131,7 +131,8 @@ minutes a full test run costs. Pick the mode from the owner's words:
 **SHIP** (only when the owner explicitly says "push this", "ship it" or "deploy")
 1. Run `scripts/ai/ship.sh` (sets `AI_MODE=ship`): the full test suite and
    every check in Verification. Behaviour changes get the full
-   red-green-refactor cycle. Definition of done and Verification describe SHIP: a SANDBOX edit is a
+   red-green-refactor cycle.
+   Definition of done and Verification describe SHIP: a SANDBOX edit is a
    preview, never "done"; it becomes done only after this full run,
    protected tests included.
 2. Fix failures with the check-fix loop; after 3 failed attempts stop and
